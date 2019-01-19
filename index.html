@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>TNM084 - Procedural texture project</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0"
+    />
+    <style>
+      body {
+        color: #ffffff;
+        font-family: Monospace;
+        font-size: 13px;
+        text-align: center;
+        font-weight: bold;
+        background-color: #000000;
+        margin: 0px;
+        overflow: hidden;
+      }
+      #info {
+        position: absolute;
+        top: 0px;
+        width: 100%;
+        padding: 5px;
+      }
+      a {
+        color: #ffffff;
+      }
+      #webglmessage a {
+        color: #da0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="info">
+      <h4>
+        Procedural terrain using three.js created by Sofia Linevik <br />
+        Zoom and rotate with mouse, change light direction with the panel to the
+        right.
+      </h4>
+    </div>
+
+    <script src="js/three.js"></script>
+    <script src="js/WebGL.js"></script>
+    <script src="js/stats.min.js"></script>
+    <script src="js/OrbitControls.js"></script>
+    <script src="js/dat.gui.min.js"></script>
+
+    <script id="vertexShader" type="x-shader/x-vertex">
+      //
+      // Description : Array and textureless GLSL 2D/3D/4D simplex
+      //               noise functions.
+      //      Author : Ian McEwan, Ashima Arts.
+      //  Maintainer : stegu
+      //     Lastmod : 20110822 (ijm)
+      //     License : Copyright (C) 2011 Ashima Arts. All rights reserved.
+      //               Distributed under the MIT License. See LICENSE file.
+      //               https://github.com/ashima/webgl-noise
+      //               https://github.com/stegu/webgl-noise
+      //
+
+      vec3 mod289(vec3 x) {
+          return x - floor(x * (1.0 / 289.0)) * 289.0;
+      }
+
+      vec4 mod289(vec4 x) {
+          return x - floor(x * (1.0 / 289.0)) * 289.0;
+      }
+
+      vec4 permute(vec4 x) {
+          return mod289(((x*34.0)+1.0)*x);
+      }
+
+      vec4 taylorInvSqrt(vec4 r)
+      {
+          return 1.79284291400159 - 0.85373472095314 * r;
+      }
+
+      float snoise(vec3 v, out vec3 gradient)
+      {
+          const vec2  C = vec2(1.0/6.0, 1.0/3.0) ;
+          const vec4  D = vec4(0.0, 0.5, 1.0, 2.0);
+
+          // First corner
+          vec3 i  = floor(v + dot(v, C.yyy) );
+          vec3 x0 =   v - i + dot(i, C.xxx) ;
+
+          // Other corners
+          vec3 g = step(x0.yzx, x0.xyz);
+          vec3 l = 1.0 - g;
+          vec3 i1 = min( g.xyz, l.zxy );
+          vec3 i2 = max( g.xyz, l.zxy );
+
+          //   x0 = x0 - 0.0 + 0.0 * C.xxx;
+          //   x1 = x0 - i1  + 1.0 * C.xxx;
+          //   x2 = x0 - i2  + 2.0 * C.xxx;
+          //   x3 = x0 - 1.0 + 3.0 * C.xxx;
+          vec3 x1 = x0 - i1 + C.xxx;
+          vec3 x2 = x0 - i2 + C.yyy; // 2.0*C.x = 1/3 = C.y
+          vec3 x3 = x0 - D.yyy;      // -1.0+3.0*C.x = -0.5 = -D.y
+
+          // Permutations
+          i = mod289(i);
+          vec4 p = permute( permute( permute(
+                      i.z + vec4(0.0, i1.z, i2.z, 1.0 ))
+                      + i.y + vec4(0.0, i1.y, i2.y, 1.0 ))
+                      + i.x + vec4(0.0, i1.x, i2.x, 1.0 ));
+
+          // Gradients: 7x7 points over a square, mapped onto an octahedron.
+          // The ring size 17*17 = 289 is close to a multiple of 49 (49*6 = 294)
+          float n_ = 0.142857142857; // 1.0/7.0
+          vec3  ns = n_ * D.wyz - D.xzx;
+
+          vec4 j = p - 49.0 * floor(p * ns.z * ns.z);  //  mod(p,7*7)
+
+          vec4 x_ = floor(j * ns.z);
+          vec4 y_ = floor(j - 7.0 * x_ );    // mod(j,N)
+
+          vec4 x = x_ *ns.x + ns.yyyy;
+          vec4 y = y_ *ns.x + ns.yyyy;
+          vec4 h = 1.0 - abs(x) - abs(y);
+
+          vec4 b0 = vec4( x.xy, y.xy );
+          vec4 b1 = vec4( x.zw, y.zw );
+
+          //vec4 s0 = vec4(lessThan(b0,0.0))*2.0 - 1.0;
+          //vec4 s1 = vec4(lessThan(b1,0.0))*2.0 - 1.0;
+          vec4 s0 = floor(b0)*2.0 + 1.0;
+          vec4 s1 = floor(b1)*2.0 + 1.0;
+          vec4 sh = -step(h, vec4(0.0));
+
+          vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy ;
+          vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww ;
+
+          vec3 p0 = vec3(a0.xy,h.x);
+          vec3 p1 = vec3(a0.zw,h.y);
+          vec3 p2 = vec3(a1.xy,h.z);
+          vec3 p3 = vec3(a1.zw,h.w);
+
+          //Normalise gradients
+          vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
+          p0 *= norm.x;
+          p1 *= norm.y;
+          p2 *= norm.z;
+          p3 *= norm.w;
+
+          // Mix final noise value
+          vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+          vec4 m2 = m * m;
+          vec4 m4 = m2 * m2;
+          vec4 pdotx = vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3));
+
+          // Determine noise gradient
+          vec4 temp = m2 * m * pdotx;
+          gradient = -8.0 * (temp.x * x0 + temp.y * x1 + temp.z * x2 + temp.w * x3);
+          gradient += m4.x * p0 + m4.y * p1 + m4.z * p2 + m4.w * p3;
+          gradient *= 42.0;
+
+          return 42.0 * dot(m4, pdotx);
+      }
+
+        varying vec3 norm;
+        uniform float time;
+        varying float height;
+        varying vec3 pos;
+
+        void main()	{
+
+            float scale = 200.0;
+            float bumpiness = 50.0;
+
+            pos = position;
+            vec3 gradient;
+            vec3 grad;
+
+            float noise = snoise((position/scale), gradient);
+            noise += 0.5 * snoise(2.0*(position/scale), grad);
+            gradient += 0.5 * grad;
+            noise += 0.25 * snoise(4.0*(position/scale), grad);
+            gradient += 0.25 * grad;
+            noise += 0.125 * snoise(8.0*(position/scale), grad);
+            gradient += 0.125 * grad;
+            noise += 0.0625 * snoise(16.0*(position/scale), grad);
+            gradient += 0.0625 * grad;
+            noise += 0.03125 * snoise(32.0*(position/scale), grad);
+            gradient += 0.03125 * grad;
+            noise += 0.015625 * snoise(64.0*(position/scale), grad);
+            gradient += 0.015625 * grad;
+
+            norm = normalize(normal - (gradient - dot(gradient, normal) * normal)); //recompute normal
+
+            height = bumpiness * noise * step(0.0, noise);
+            vec3 Position = position + normal * height;
+
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(Position, 1.0);
+        }
+    </script>
+
+    <script id="fragmentShader" type="x-shader/x-fragment">
+        //
+        // Description : Array and textureless GLSL 2D/3D/4D simplex
+        //               noise functions.
+        //      Author : Ian McEwan, Ashima Arts.
+        //  Maintainer : stegu
+        //     Lastmod : 20110822 (ijm)
+        //     License : Copyright (C) 2011 Ashima Arts. All rights reserved.
+        //               Distributed under the MIT License. See LICENSE file.
+        //               https://github.com/ashima/webgl-noise
+        //               https://github.com/stegu/webgl-noise
+        //
+
+          vec3 mod289(vec3 x) {
+              return x - floor(x * (1.0 / 289.0)) * 289.0;
+          }
+
+          vec4 mod289(vec4 x) {
+              return x - floor(x * (1.0 / 289.0)) * 289.0;
+          }
+
+          vec4 permute(vec4 x) {
+              return mod289(((x*34.0)+1.0)*x);
+          }
+
+          vec4 taylorInvSqrt(vec4 r)
+          {
+              return 1.79284291400159 - 0.85373472095314 * r;
+          }
+
+          float snoise(vec3 v, out vec3 gradient)
+          {
+          const vec2  C = vec2(1.0/6.0, 1.0/3.0) ;
+          const vec4  D = vec4(0.0, 0.5, 1.0, 2.0);
+
+          // First corner
+          vec3 i  = floor(v + dot(v, C.yyy) );
+          vec3 x0 =   v - i + dot(i, C.xxx) ;
+
+          // Other corners
+          vec3 g = step(x0.yzx, x0.xyz);
+          vec3 l = 1.0 - g;
+          vec3 i1 = min( g.xyz, l.zxy );
+          vec3 i2 = max( g.xyz, l.zxy );
+
+          //   x0 = x0 - 0.0 + 0.0 * C.xxx;
+          //   x1 = x0 - i1  + 1.0 * C.xxx;
+          //   x2 = x0 - i2  + 2.0 * C.xxx;
+          //   x3 = x0 - 1.0 + 3.0 * C.xxx;
+          vec3 x1 = x0 - i1 + C.xxx;
+          vec3 x2 = x0 - i2 + C.yyy; // 2.0*C.x = 1/3 = C.y
+          vec3 x3 = x0 - D.yyy;      // -1.0+3.0*C.x = -0.5 = -D.y
+
+          // Permutations
+          i = mod289(i);
+          vec4 p = permute( permute( permute(
+                      i.z + vec4(0.0, i1.z, i2.z, 1.0 ))
+                      + i.y + vec4(0.0, i1.y, i2.y, 1.0 ))
+                      + i.x + vec4(0.0, i1.x, i2.x, 1.0 ));
+
+          // Gradients: 7x7 points over a square, mapped onto an octahedron.
+          // The ring size 17*17 = 289 is close to a multiple of 49 (49*6 = 294)
+          float n_ = 0.142857142857; // 1.0/7.0
+          vec3  ns = n_ * D.wyz - D.xzx;
+
+          vec4 j = p - 49.0 * floor(p * ns.z * ns.z);  //  mod(p,7*7)
+
+          vec4 x_ = floor(j * ns.z);
+          vec4 y_ = floor(j - 7.0 * x_ );    // mod(j,N)
+
+          vec4 x = x_ *ns.x + ns.yyyy;
+          vec4 y = y_ *ns.x + ns.yyyy;
+          vec4 h = 1.0 - abs(x) - abs(y);
+
+          vec4 b0 = vec4( x.xy, y.xy );
+          vec4 b1 = vec4( x.zw, y.zw );
+
+          //vec4 s0 = vec4(lessThan(b0,0.0))*2.0 - 1.0;
+          //vec4 s1 = vec4(lessThan(b1,0.0))*2.0 - 1.0;
+          vec4 s0 = floor(b0)*2.0 + 1.0;
+          vec4 s1 = floor(b1)*2.0 + 1.0;
+          vec4 sh = -step(h, vec4(0.0));
+
+          vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy ;
+          vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww ;
+
+          vec3 p0 = vec3(a0.xy,h.x);
+          vec3 p1 = vec3(a0.zw,h.y);
+          vec3 p2 = vec3(a1.xy,h.z);
+          vec3 p3 = vec3(a1.zw,h.w);
+
+          //Normalise gradients
+          vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
+          p0 *= norm.x;
+          p1 *= norm.y;
+          p2 *= norm.z;
+          p3 *= norm.w;
+
+          // Mix final noise value
+          vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+          vec4 m2 = m * m;
+          vec4 m4 = m2 * m2;
+          vec4 pdotx = vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3));
+
+          // Determine noise gradient
+          vec4 temp = m2 * m * pdotx;
+          gradient = -8.0 * (temp.x * x0 + temp.y * x1 + temp.z * x2 + temp.w * x3);
+          gradient += m4.x * p0 + m4.y * p1 + m4.z * p2 + m4.w * p3;
+          gradient *= 42.0;
+
+          return 42.0 * dot(m4, pdotx);
+      }
+
+      varying float height;
+      varying vec3 norm;
+      varying vec3 pos;
+      uniform float time;
+      uniform float position_x;
+      uniform float position_y;
+      uniform float position_z;
+
+      void main(void)
+      {
+
+        float scale = 20.0;
+        vec3 light_position = vec3(position_x, position_y, position_z);
+        vec4 light_ambient = vec4(0.8, 0.8, 0.8, 0.0);
+        vec4 light_diffuse = vec4(0.4, 0.4, 0.4, 0.0);
+        vec4 light_specular = vec4(0.4, 0.4, 0.4, 0.0);
+        float shininess = 10.0;
+        vec4 material_ambient_water = vec4(0.9, 0.9, 0.9, 0.0);
+        vec4 material_diffuse_water =  vec4(0.6, 0.6, 0.6, 0.0);
+        vec4 material_ambient_mountain = vec4(0.7, 0.7, 0.7, 0.0);
+        vec4 material_diffuse_mountain = vec4(0.7, 0.7, 0.7, 0.0);
+        //colors
+        vec4 ocean_dark = vec4(0.06, 0.37, 0.61, 0.0);
+        vec4 ocean_light = vec4(0.14, 0.54, 0.85, 0.0);
+        vec4 steep_mountain = vec4(0.25,0.15,0.0,0.0);
+        vec4 flat_mountain = vec4(0.36, 0.7, 0.21, 0.0);
+        vec4 mountain_color = norm.z * mix(steep_mountain,flat_mountain,smoothstep(0.4, 0.8, norm.z));
+        vec4 steep_mountain_top = vec4(0.0,0.4,0.0,0.0);
+        vec4 flat_mountain_top = vec4(0.0, 0.2, 0.0, 0.0);
+        vec4 mountain_top = norm.z * mix(steep_mountain_top,flat_mountain_top,smoothstep(0.4, 0.6, norm.z));
+
+        vec3 gradient;
+        vec3 grad;
+        float noise = snoise(vec3(pos.x/scale, pos.y/scale, time/10.0), gradient);
+        noise += 0.5 * snoise(vec3(2.0 * pos.x/scale, 2.0 * pos.y/scale, time/3.0), grad);
+        gradient += 0.5 * grad;
+        noise += 0.25 * snoise(vec3(4.0 * pos.x/scale, 4.0 * pos.y/scale, time/3.0), grad);
+        gradient += 0.25 * grad;
+        noise += 0.125 * snoise(vec3(8.0 * pos.x/scale, 8.0 * pos.y/scale, time/3.0), grad);
+        gradient += 0.125 * grad;
+        noise += 0.0625 * snoise(vec3(16.0 * pos.x/scale, 16.0 * pos.y/scale, time/3.0), grad);
+        gradient += 0.0625 * grad;
+        noise += 0.03125 * snoise(vec3(32.0 * pos.x/scale, 32.0 * pos.y/scale, time/3.0), grad);
+        gradient += 0.03125 * grad;
+        noise += 0.015625 * snoise(vec3(64.0 * pos.x/scale, 64.0 * pos.y/scale, time/3.0), grad);
+        gradient += 0.015625 * grad;
+
+        vec3 norm_spec = normalize(norm - (gradient - dot(gradient, norm) * norm)); //recalculate normal
+
+        float is_mountain = smoothstep(0.0, 0.5, height);
+
+        //ambient light
+        vec4 ambient = vec4(is_mountain * material_ambient_mountain * mix(mountain_color, mountain_top, smoothstep(15.0,25.0,height)) + (1.0-is_mountain) * material_ambient_water * mix(ocean_dark, ocean_light, noise)) * light_ambient;
+
+        //diffuse light
+        vec3 surf2light = normalize(light_position - pos);
+        float diffuse_contribution_water = max(0.0, dot(vec3(0.0, 0.0, 1.0), surf2light)); //fix water normal
+        float diffuse_contribution_mountain = max(0.0, dot(norm, surf2light));
+        vec4 diffuse = ((1.0 - is_mountain) * diffuse_contribution_water * material_diffuse_water + (is_mountain) * diffuse_contribution_mountain * material_diffuse_mountain) * light_diffuse;
+
+        //specular light
+        vec3 surf2view = normalize(cameraPosition - pos);
+        vec3 reflection = reflect(-surf2light, norm_spec);
+        float specular_contribution = pow(max(0.0, dot(surf2view, reflection)), shininess);
+        //specular only in water surface points
+        vec4 material_specular = smoothstep(vec4(0.95, 0.95, 0.95, 0.0), vec4(1.0, 1.0, 1.0, 0.0), vec4(1.0/(1.0+height), 1.0/(1.0+height), 1.0/(1.0+height), 0.0)) * 0.5;
+        vec4 specular = material_specular * light_specular * specular_contribution;
+
+        gl_FragColor = vec4(ambient + diffuse + specular);
+
+      }
+    </script>
+
+    <script src="js/script.js"></script>
+  </body>
+</html>
